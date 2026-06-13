@@ -272,7 +272,6 @@ def main():
         col_dl1, col_dl2 = st.columns(2)
 
         with col_dl1:
-            # DOCX 다운로드
             try:
                 from docx_export import generate_docx
                 docx_bytes = generate_docx(st.session_state["result"])
@@ -297,9 +296,13 @@ def main():
             )
 
         st.markdown("---")
-        st.subheader("📋 원문")
-        st.code(st.session_state["result"], language="markdown")
-        st.caption("Ctrl+A 로 전체 선택 후 복사하세요.")
+        tab_render, tab_raw = st.tabs(["📖 수식 렌더링 보기 (HWP 옮겨쓰기용)", "📋 원문 복사"])
+        with tab_render:
+            st.info("수식이 렌더링된 형태입니다. 이 화면을 보며 HWP에 옮겨 쓰세요.")
+            st.markdown(st.session_state["result"])
+        with tab_raw:
+            st.caption("Ctrl+A 로 전체 선택 후 복사하세요.")
+            st.code(st.session_state["result"], language="markdown")
 
 
 if __name__ == "__main__":
