@@ -118,7 +118,8 @@ def get_api_key() -> str:
     return key
 
 
-def run_analysis(api_key: str, paper_file, feedback_files: list) -> str:
+def stream_analysis(api_key: str, paper_file, feedback_files: list):
+    """파일 업로드 후 Gemini 스트리밍 응답을 yield하는 제너레이터"""
     from google import genai
     from google.genai import types
 
@@ -153,16 +154,17 @@ def run_analysis(api_key: str, paper_file, feedback_files: list) -> str:
             contents.append(f)
         contents.append(USER_PROMPT)
 
-        response = client.models.generate_content(
+        for chunk in client.models.generate_content_stream(
             model="gemini-3.5-flash",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=8000,
+                max_output_tokens=32000,
                 temperature=0.3,
             ),
-        )
-        return response.text
+        ):
+            if chunk.text:
+                yield chunk.text
 
     finally:
         for p in tmp_paths:
@@ -241,31 +243,33 @@ def main():
         st.info("📄 새 논문 PDF를 업로드해주세요.")
 
     if st.button("🔬 분석 시작", type="primary", disabled=not can_run, use_container_width=True):
-        with st.spinner("Gemini 3.5 Flash가 논문을 분석 중입니다... (1~2분 소요)"):
-            try:
-                result = run_analysis(api_key, paper_file, feedback_files or [])
-                st.session_state["result"] = result
-            except Exception as e:
-                err = str(e)
-                if "API_KEY" in err.upper() or "INVALID" in err.upper():
-                    st.error("❌ API 키가 올바르지 않습니다.")
-                elif "QUOTA" in err.upper() or "RATE" in err.upper():
-                    st.error("❌ API 사용 한도 초과. 잠시 후 다시 시도해주세요.")
-                else:
-                    st.error(f"❌ 오류: {err}")
-
-    if "result" in st.session_state:
         st.markdown("---")
-        st.subheader("📋 EBM 워크시트 결과")
+        st.subheader("📋 EBM 워크시트 생성 중...")
+        st.caption("아래에 실시간으로 작성됩니다. 완료될 때까지 기다려주세요.")
 
-        tab1, tab2 = st.tabs(["📖 렌더링 보기", "📋 원문 복사"])
+        result_box = st.empty()
+        accumulated = []
 
-        with tab1:
-            st.markdown(st.session_state["result"])
+        try:
+            for chunk in stream_analysis(api_key, paper_file, feedback_files or []):
+                accumulated.append(chunk)
+                result_box.markdown("".join(accumulated))
+            st.session_state["result"] = "".join(accumulated)
+            st.success("✅ 워크시트 생성 완료!")
+        except Exception as e:
+            err = str(e)
+            if "API_KEY" in err.upper() or "INVALID" in err.upper():
+                st.error("❌ API 키가 올바르지 않습니다.")
+            elif "QUOTA" in err.upper() or "RATE" in err.upper():
+                st.error("❌ API 사용 한도 초과. 잠시 후 다시 시도해주세요.")
+            else:
+                st.error(f"❌ 오류: {err}")
 
-        with tab2:
-            st.code(st.session_state["result"], language="markdown")
-            st.caption("Ctrl+A 로 전체 선택 후 복사하세요.")
+    if "result" in st.session_state and st.session_state.get("result"):
+        st.markdown("---")
+        st.subheader("📋 원문 복사")
+        st.code(st.session_state["result"], language="markdown")
+        st.caption("Ctrl+A 로 전체 선택 후 복사하세요.")
 
         st.download_button(
             label="💾 결과 다운로드 (.txt)",
