@@ -267,17 +267,39 @@ def main():
 
     if "result" in st.session_state and st.session_state.get("result"):
         st.markdown("---")
-        st.subheader("📋 원문 복사")
+        st.subheader("📥 다운로드")
+
+        col_dl1, col_dl2 = st.columns(2)
+
+        with col_dl1:
+            # DOCX 다운로드
+            try:
+                from docx_export import generate_docx
+                docx_bytes = generate_docx(st.session_state["result"])
+                st.download_button(
+                    label="📄 HWP용 DOCX 다운로드",
+                    data=docx_bytes,
+                    file_name="EBM_worksheet.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    help="다운로드 후 HWP에서 열어 .hwp로 저장하세요",
+                )
+            except Exception as e:
+                st.error(f"DOCX 생성 오류: {e}")
+
+        with col_dl2:
+            st.download_button(
+                label="📋 텍스트 다운로드 (.txt)",
+                data=st.session_state["result"].encode("utf-8"),
+                file_name="EBM_worksheet.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+
+        st.markdown("---")
+        st.subheader("📋 원문")
         st.code(st.session_state["result"], language="markdown")
         st.caption("Ctrl+A 로 전체 선택 후 복사하세요.")
-
-        st.download_button(
-            label="💾 결과 다운로드 (.txt)",
-            data=st.session_state["result"].encode("utf-8"),
-            file_name="EBM_worksheet.txt",
-            mime="text/plain",
-            use_container_width=True,
-        )
 
 
 if __name__ == "__main__":
