@@ -39,11 +39,14 @@ def _latex_to_plain(expr: str) -> str:
     return expr.strip()
 
 
-def _clean(text: str) -> str:
-    """마크다운 기호 제거 후 LaTeX 변환"""
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # bold
-    text = re.sub(r'\*(.+?)\*', r'\1', text)       # italic
-    text = re.sub(r'`(.+?)`', r'\1', text)         # code
+def _clean(text) -> str:
+    """마크다운 기호 제거 후 LaTeX 변환. None-safe."""
+    if not text:
+        return ""
+    text = str(text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
     text = _strip_latex(text)
     return text.strip()
 
@@ -71,7 +74,7 @@ def _add_body(doc, text, indent=False):
     p = doc.add_paragraph()
     if indent:
         p.paragraph_format.left_indent = Cm(0.7)
-    run = p.add_run(_clean(text))
+    run = p.add_run(_clean(text or ""))
     _set_font(run, size_pt=11)
     p.paragraph_format.space_after = Pt(2)
     return p
@@ -80,9 +83,9 @@ def _add_body(doc, text, indent=False):
 def _add_label_value(doc, label, value, indent_cm=0):
     p = doc.add_paragraph()
     p.paragraph_format.left_indent = Cm(indent_cm)
-    r1 = p.add_run(label + " ")
+    r1 = p.add_run(str(label) + " ")
     _set_font(r1, size_pt=11, bold=True)
-    r2 = p.add_run(_clean(value))
+    r2 = p.add_run(_clean(value or ""))
     _set_font(r2, size_pt=11)
     p.paragraph_format.space_after = Pt(2)
     return p
@@ -91,15 +94,18 @@ def _add_label_value(doc, label, value, indent_cm=0):
 # ── 섹션 파서 ─────────────────────────────────────────────────
 
 def _extract_bullet_value(text: str, key_pattern: str) -> str:
-    """마크다운 불릿에서 특정 키의 값 추출"""
+    """마크다운 불릿에서 특정 키의 값 추출. None-safe."""
+    if not text:
+        return ""
     pattern = rf'\*\s*\*\*{key_pattern}[:\*]*\*\*\s*(.+?)(?=\n\*|\n##|\n###|$)'
     m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-    if m:
+    if m and m.group(1):
         return m.group(1).strip()
-    # 키 없이 값만 있는 경우
     pattern2 = rf'\*\s*{key_pattern}[:\s]+(.+?)(?=\n\*|\n##|\n###|$)'
     m2 = re.search(pattern2, text, re.DOTALL | re.IGNORECASE)
-    return m2.group(1).strip() if m2 else ""
+    if m2 and m2.group(1):
+        return m2.group(1).strip()
+    return ""
 
 
 def _get_section(text: str, header: str) -> str:
@@ -196,7 +202,7 @@ def generate_docx(ai_text: str) -> bytes:
             ai_text, re.DOTALL | re.IGNORECASE
         )
         answer = m.group(1) if m else ""
-        evidence = _clean(m.group(2)) if m else ""
+        evidence = _clean(m.group(2) or "") if m else ""
 
         p = doc.add_paragraph()
         p.paragraph_format.left_indent = Cm(0.5)
@@ -311,13 +317,13 @@ def generate_docx(ai_text: str) -> bytes:
         disc_parts = []
 
     _add_heading(doc, "1. 논문의 문제점 및 제한점", level=2)
-    disc1_content = disc1_m.group(2) if disc1_m else (disc_parts[0] if disc_parts else disc_sec[:500])
-    _add_body(doc, disc1_content, indent=True)
+    disc1_content = (disc1_m.group(2) or "") if disc1_m else (disc_parts[0] if disc_parts else disc_sec[:500])
+    _add_body(doc, disc1_content or "", indent=True)
     doc.add_paragraph()
 
     _add_heading(doc, "2. 추가로 필요한 근거", level=2)
-    disc2_content = disc2_m.group(2) if disc2_m else (disc_parts[1] if len(disc_parts) > 1 else "")
-    _add_body(doc, disc2_content, indent=True)
+    disc2_content = (disc2_m.group(2) or "") if disc2_m else (disc_parts[1] if len(disc_parts) > 1 else "")
+    _add_body(doc, disc2_content or "", indent=True)
 
     # ── 저장 ─────────────────────────────────────────────────
     output = io.BytesIO()
