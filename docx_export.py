@@ -11,43 +11,14 @@ from docx.oxml import OxmlElement
 
 # ── 헬퍼 ─────────────────────────────────────────────────────
 
-def _strip_latex(text: str) -> str:
-    """LaTeX 수식을 읽기 쉬운 텍스트로 변환"""
-    # $$...$$ 블록
-    text = re.sub(r'\$\$(.+?)\$\$', lambda m: _latex_to_plain(m.group(1)), text, flags=re.DOTALL)
-    # $...$ 인라인
-    text = re.sub(r'\$(.+?)\$', lambda m: _latex_to_plain(m.group(1)), text)
-    return text
-
-
-def _latex_to_plain(expr: str) -> str:
-    """간단한 LaTeX → 일반 텍스트 변환"""
-    expr = expr.strip()
-    expr = re.sub(r'\\frac\{(.+?)\}\{(.+?)\}', r'(\1)/(\2)', expr)
-    expr = re.sub(r'\\sqrt\{(.+?)\}', r'√(\1)', expr)
-    expr = re.sub(r'\\text\{(.+?)\}', r'\1', expr)
-    expr = re.sub(r'\\times', '×', expr)
-    expr = re.sub(r'\\pm', '±', expr)
-    expr = re.sub(r'\\geq', '≥', expr)
-    expr = re.sub(r'\\leq', '≤', expr)
-    expr = re.sub(r'\\neq', '≠', expr)
-    expr = re.sub(r'\\alpha', 'α', expr)
-    expr = re.sub(r'\\beta', 'β', expr)
-    expr = re.sub(r'\\_\{(.+?)\}', r'_\1', expr)
-    expr = re.sub(r'\\\w+', '', expr)
-    expr = re.sub(r'[{}]', '', expr)
-    return expr.strip()
-
-
 def _clean(text) -> str:
-    """마크다운 기호 제거 후 LaTeX 변환. None-safe."""
+    """마크다운 기호만 제거. LaTeX 수식은 원본 그대로 유지. None-safe."""
     if not text:
         return ""
     text = str(text)
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text, flags=re.DOTALL)
     text = re.sub(r'`(.+?)`', r'\1', text)
-    text = _strip_latex(text)
     return text.strip()
 
 
@@ -304,26 +275,24 @@ def generate_docx(ai_text: str) -> bytes:
 
     # ── DISCUSSION ────────────────────────────────────────────
     _add_heading(doc, "DISCUSSION", level=1)
-    disc_sec = _get_section(ai_text, "DISCUSSION")
 
-    disc1_m = re.search(r'1[.\s]+(앞에서.*?제한점.*?|문제점.*?):\s*(.+?)(?=\n2[.\s]|\Z)', disc_sec, re.DOTALL | re.IGNORECASE)
-    disc2_m = re.search(r'2[.\s]+(.+?):\s*(.+?)(?=\n3[.\s]|\Z)', disc_sec, re.DOTALL | re.IGNORECASE)
+    # ## DISCUSSION 이후 전체 텍스트 추출 (마지막 섹션이므로 끝까지)
+    disc_m = re.search(r'##\s*DISCUSSION\s*\n(.*)', ai_text, re.DOTALL | re.IGNORECASE)
+    disc_full = disc_m.group(1).strip() if disc_m else ""
 
-    if not disc1_m:
-        # 섹션에서 직접 분리
-        parts = re.split(r'\n\s*\d+[.\s]', disc_sec)
-        disc_parts = [p.strip() for p in parts if p.strip()]
-    else:
-        disc_parts = []
+    # 1번 항목: "1." 이후 ~ "2." 이전
+    item1_m = re.search(r'^\s*1[.\)]\s*(.+?)(?=^\s*2[.\)])', disc_full, re.DOTALL | re.MULTILINE)
+    # 2번 항목: "2." 이후 끝까지
+    item2_m = re.search(r'^\s*2[.\)]\s*(.+)', disc_full, re.DOTALL | re.MULTILINE)
 
     _add_heading(doc, "1. 논문의 문제점 및 제한점", level=2)
-    disc1_content = (disc1_m.group(2) or "") if disc1_m else (disc_parts[0] if disc_parts else disc_sec[:500])
-    _add_body(doc, disc1_content or "", indent=True)
+    disc1_content = _clean(item1_m.group(1)) if item1_m else _clean(disc_full[:600])
+    _add_body(doc, disc1_content or "(내용 없음)", indent=True)
     doc.add_paragraph()
 
     _add_heading(doc, "2. 추가로 필요한 근거", level=2)
-    disc2_content = (disc2_m.group(2) or "") if disc2_m else (disc_parts[1] if len(disc_parts) > 1 else "")
-    _add_body(doc, disc2_content or "", indent=True)
+    disc2_content = _clean(item2_m.group(1)) if item2_m else ""
+    _add_body(doc, disc2_content or "(내용 없음)", indent=True)
 
     # ── 저장 ─────────────────────────────────────────────────
     output = io.BytesIO()
